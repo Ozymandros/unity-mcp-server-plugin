@@ -1,17 +1,28 @@
 """
-Unity MCP Server Plugin for Semantic Kernel
+Unity MCP Plugin for Semantic Kernel — v3.0.0
 
-A bridge plugin that exposes Unity Editor operations through the Unity MCP Server
-as Semantic Kernel functions.
+Re-exports from the ``unity_mcp`` package for convenience.
 """
 
-from unity_mcp_plugin import UnityMCPPlugin, UnityMCPClient, MCPToolSchema
+from unity_mcp import (
+    UnityMCPPlugin,
+    StdioMcpClient,
+    UnityMCPClient,
+    IMcpClient,
+    UnityMcpOptions,
+    BackoffStrategy,
+    ConnectionState,
+)
 
-__version__ = "1.0.0"
-__author__ = "Unity MCP Contributors"
+__version__ = "3.0.0"
+__author__ = "Andreu"
 
 __all__ = [
     "UnityMCPPlugin",
+    "StdioMcpClient",
     "UnityMCPClient",
-    "MCPToolSchema"
+    "IMcpClient",
+    "UnityMcpOptions",
+    "BackoffStrategy",
+    "ConnectionState",
 ]

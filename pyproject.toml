@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unity-mcp-plugin"
-version = "1.0.0"
-description = "Semantic Kernel plugin for interacting with the Unity MCP Server"
+version = "3.0.0"
+description = "Semantic Kernel plugin for the Unity MCP server (stdio transport)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Andreu" }]
 classifiers = [
@@ -16,19 +16,20 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
-    "semantic-kernel>=0.9.0",
+    "semantic-kernel>=1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=0.23.0",
     "black>=23.0.0",
     "mypy>=1.0.0",
     "flake8>=6.0.0",
@@ -40,4 +41,6 @@ Repository = "https://github.com/Ozymandros/Unity-MCP-SK-Plugin"
 Issues = "https://github.com/Ozymandros/Unity-MCP-SK-Plugin/issues"
 
 [tool.setuptools]
-py-modules = ["unity_mcp_plugin"]
+packages = ["unity_mcp"]
+
+# pytest config lives in pytest.ini (project root)
