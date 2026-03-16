@@ -78,7 +78,11 @@ class FakeProcessManager:
     async def ensure_process_running(self):
         from unity_mcp.models import ProcessInfo
         self._state = ProcessState.RUNNING
-        return ProcessInfo(process_id=1234, executable_path="unity-mcp", started_at=datetime.now(timezone.utc))
+        return ProcessInfo(
+            process_id=1234,
+            executable_path="unity-mcp",
+            started_at=datetime.now(timezone.utc),
+        )
 
     async def stop_process(self) -> None:
         self._state = ProcessState.STOPPED
@@ -106,7 +110,12 @@ class FakeMcpClient:
     async def list_tools(self, cancellation_token: Any = None) -> List[McpToolDefinition]:
         return list(self._tools)
 
-    async def invoke_tool(self, tool_name: str, parameters: Dict[str, Any], cancellation_token: Any = None) -> McpResponse:
+    async def invoke_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        cancellation_token: Any = None,
+    ) -> McpResponse:
         self.calls.append((tool_name, parameters))
         if tool_name in self._responses:
             return self._responses[tool_name]
@@ -232,11 +241,13 @@ class TestLogSanitizer:
 
     def test_sanitize_bearer(self):
         result = LogSanitizer.sanitize_string("Authorization: Bearer abc123")
+        assert result is not None
         assert "abc123" not in result
         assert "Bearer [REDACTED]" in result
 
     def test_sanitize_email(self):
         result = LogSanitizer.sanitize_string("Contact user@example.com for help")
+        assert result is not None
         assert "user@example.com" not in result
         assert "[EMAIL_REDACTED]" in result
 
@@ -686,7 +697,13 @@ class TestUnityMCPPluginInvokeTool:
         td = McpToolDefinition(
             name="unity_create_scene",
             description="Create scene",
-            parameters={"path": McpParameterDefinition(name="path", type="string", required=True)},
+            parameters={
+                "path": McpParameterDefinition(
+                    name="path",
+                    type="string",
+                    required=True,
+                )
+            },
         )
         plugin, _ = _make_plugin([td])
         await plugin.initialize()
@@ -870,12 +887,14 @@ class TestLogSanitizerExtended:
     def test_redacts_jwt_token(self):
         jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
         result = LogSanitizer.sanitize_string(f"Token: {jwt}")
+        assert result is not None
         assert jwt not in result
         assert "[REDACTED]" in result
 
     def test_redacts_password_in_connection_string(self):
         conn = "Server=db;Password=supersecret;Database=mydb"
         result = LogSanitizer.sanitize_string(conn)
+        assert result is not None
         assert "supersecret" not in result
         assert "Password=[REDACTED]" in result
 
@@ -883,6 +902,7 @@ class TestLogSanitizerExtended:
         # 32+ alphanumeric chars look like API keys
         key = "A" * 32
         result = LogSanitizer.sanitize_string(f"key={key}")
+        assert result is not None
         assert key not in result
         assert "[REDACTED]" in result
 
@@ -891,6 +911,7 @@ class TestLogSanitizerExtended:
         # sanitize_string handles Bearer tokens in URLs too
         url_with_bearer = "Authorization: Bearer mytoken123"
         result = LogSanitizer.sanitize_string(url_with_bearer)
+        assert result is not None
         assert "mytoken123" not in result
 
 

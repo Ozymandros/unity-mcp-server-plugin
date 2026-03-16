@@ -134,7 +134,11 @@ class StdioMcpClient:
             except (ProtocolException, McpServerException):
                 raise  # non-transient — no retry
 
-        raise last_exc or NetworkException(f"Failed to invoke tool '{tool_name}' after {self._options.max_retry_attempts} retries")
+        if last_exc:
+            raise last_exc
+        raise NetworkException(
+            f"Failed to invoke tool '{tool_name}' after {self._options.max_retry_attempts} retries"
+        )
 
     async def list_tools(self, cancellation_token: Any = None) -> List[McpToolDefinition]:
         """Discover available tools from the server."""
