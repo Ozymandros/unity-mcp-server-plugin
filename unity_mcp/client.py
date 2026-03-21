@@ -341,6 +341,7 @@ class StdioMcpClient:
                         type=pdef.get("type", "string"),
                         description=pdef.get("description"),
                         required=pname in required_set,
+                        default_value=pdef.get("default"),
                     )
                 tools.append(McpToolDefinition(name=name, description=description, parameters=params))
             return tools

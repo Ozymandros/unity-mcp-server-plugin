@@ -43,6 +43,7 @@ from .models import (
     ConnectionState,
     IMcpClient,
     IProcessManager,
+    IMcpToolMapper,
     McpError,
     McpParameterDefinition,
     McpRequest,
@@ -53,6 +54,7 @@ from .models import (
     ProcessState,
     UnityMcpOptions,
 )
+from .tool_mapper import McpToolMapper
 from .plugin import UnityMCPPlugin
 from .security import InputValidator, LogSanitizer
 
@@ -68,6 +70,7 @@ __all__ = [
     # Protocols / interfaces
     "IMcpClient",
     "IProcessManager",
+    "IMcpToolMapper",
     # Configuration
     "UnityMcpOptions",
     "BackoffStrategy",
@@ -84,6 +87,7 @@ __all__ = [
     # Security
     "LogSanitizer",
     "InputValidator",
+    "McpToolMapper",
     # Exceptions
     "UnityMcpException",
     "NetworkException",

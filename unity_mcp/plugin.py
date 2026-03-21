@@ -21,17 +21,18 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from semantic_kernel import Kernel
-from semantic_kernel.functions import KernelFunction, kernel_function
-from semantic_kernel.functions.kernel_function_from_method import KernelFunctionFromMethod
+from semantic_kernel.functions import kernel_function
 
 from .client import StdioMcpClient
 from ._formatting import format_result, format_tool_list
 from .exceptions import UnityMcpException
-from .models import IMcpClient, McpToolDefinition, UnityMcpOptions
+from .kernel_registration import register_unity_tools_as_functions
+from .models import IMcpClient, IMcpToolMapper, McpToolDefinition, UnityMcpOptions
 from .security import InputValidator, LogSanitizer
+from .tool_mapper import McpToolMapper
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,11 @@ class UnityMCPPlugin:
         self,
         client: IMcpClient,
         options: Optional[UnityMcpOptions] = None,
+        tool_mapper: Optional[IMcpToolMapper] = None,
     ) -> None:
         self._client = client
         self._options = options or UnityMcpOptions()
-        self._tools: Dict[str, McpToolDefinition] = {}
+        self._tool_mapper = tool_mapper or McpToolMapper()
         self._initialized = False
 
     @classmethod
@@ -98,9 +100,9 @@ class UnityMCPPlugin:
         logger.info("Initializing Unity MCP plugin")
         await self._client.connect()
         tools = await self._client.list_tools()
-        self._tools = {t.name: t for t in tools}
+        self._tool_mapper.initialize(tools)
         self._initialized = True
-        logger.info("Unity MCP plugin initialized with %d tools", len(self._tools))
+        logger.info("Unity MCP plugin initialized with %d tools", len(self.get_registered_tools()))
 
     async def cleanup(self) -> None:
         """Close the client connection and release resources."""
@@ -115,7 +117,23 @@ class UnityMCPPlugin:
     @property
     def tools(self) -> Dict[str, McpToolDefinition]:
         """Discovered tool definitions, keyed by tool name."""
-        return dict(self._tools)
+        return {tool.name: tool for tool in self.get_registered_tools()}
+
+    def map_tool_definition(self, tool: McpToolDefinition) -> Dict[str, Any]:
+        """Map one MCP tool definition into SK metadata primitives."""
+        return self._tool_mapper.map_tool_definition(tool)
+
+    def get_tool_by_name(self, tool_name: str) -> Optional[McpToolDefinition]:
+        """Return one registered tool by name, or None."""
+        return self._tool_mapper.get_tool_by_name(tool_name)
+
+    def get_tool_names(self) -> list[str]:
+        """Return deterministic sorted tool names."""
+        return self._tool_mapper.get_tool_names()
+
+    def get_registered_tools(self) -> list[McpToolDefinition]:
+        """Return all mapped tools in deterministic order."""
+        return self._tool_mapper.get_registered_tools()
 
     def is_healthy(self) -> bool:
         """Delegate to the underlying client health check."""
@@ -144,8 +162,10 @@ class UnityMCPPlugin:
         await self._ensure_initialized()
         params = parameters or {}
 
-        InputValidator.validate_tool_name(tool_name, self._tools)
-        tool_def = self._tools[tool_name]
+        InputValidator.validate_tool_name(tool_name, self.get_tool_names())
+        tool_def = self.get_tool_by_name(tool_name)
+        if tool_def is None:
+            raise UnityMcpException(f"Tool '{tool_name}' is not registered")
         InputValidator.validate_parameters(params, tool_def)
 
         if self._options.enable_message_logging:
@@ -193,7 +213,7 @@ class UnityMCPPlugin:
     async def list_unity_tools(self) -> str:
         """Return a formatted list of all discovered tools."""
         await self._ensure_initialized()
-        return format_tool_list(list(self._tools.values()))
+        return format_tool_list(self.get_registered_tools())
 
     # ------------------------------------------------------------------
     # Static factory — full kernel with per-tool functions
@@ -230,22 +250,14 @@ class UnityMCPPlugin:
 
         kernel = Kernel()
 
-        # Register the generic entry point
+        # Register router mode for backward compatibility.
         kernel.add_plugin(plugin, plugin_name=plugin_name)
-
-        # Register each discovered tool as its own function
-        functions: List[KernelFunction] = []
-        for tool_def in plugin._tools.values():
-            fn = _make_kernel_function(plugin, tool_def)
-            functions.append(fn)
-
-        if functions:
-            kernel.add_functions(plugin_name=plugin_name, functions=functions)
-            logger.info(
-                "Registered %d Unity tools as kernel functions under plugin '%s'",
-                len(functions),
-                plugin_name,
-            )
+        register_unity_tools_as_functions(kernel=kernel, plugin=plugin, plugin_name=plugin_name)
+        logger.info(
+            "Registered %d Unity tools as kernel functions under plugin '%s'",
+            len(plugin.get_registered_tools()),
+            plugin_name,
+        )
 
         return kernel
 
@@ -256,30 +268,3 @@ class UnityMCPPlugin:
     async def _ensure_initialized(self) -> None:
         if not self._initialized:
             await self.initialize()
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a KernelFunction from a McpToolDefinition
-# ---------------------------------------------------------------------------
-
-
-def _make_kernel_function(plugin: UnityMCPPlugin, tool: McpToolDefinition) -> KernelFunction:
-    """
-    Dynamically create a ``KernelFunction`` that wraps ``plugin.invoke_tool``
-    for the given ``McpToolDefinition``.
-
-    The function accepts ``**kwargs`` so SK can pass named parameters directly.
-    """
-    tool_name = tool.name
-
-    async def _fn(**kwargs: Any) -> str:
-        # Strip SK internal keys
-        params = {k: v for k, v in kwargs.items() if v is not None and k != "kernel"}
-        result = await plugin.invoke_tool(tool_name, params)
-        return format_result(result)
-
-    _fn.__name__ = tool_name
-    _fn.__doc__ = tool.description
-
-    decorated = kernel_function(name=tool_name, description=tool.description)(_fn)
-    return KernelFunctionFromMethod(method=decorated, plugin_name="unity")

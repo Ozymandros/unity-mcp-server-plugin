@@ -33,6 +33,7 @@ from unity_mcp import (
     McpParameterDefinition,
     McpResponse,
     McpServerException,
+    McpToolMapper,
     McpToolDefinition,
     NetworkException,
     ProcessException,
@@ -97,6 +98,7 @@ class FakeMcpClient:
         self._tools: List[McpToolDefinition] = []
         self._responses: Dict[str, McpResponse] = {}
         self._healthy = True
+        self.list_tools_calls = 0
 
     def set_tools(self, tools: List[McpToolDefinition]) -> None:
         self._tools = tools
@@ -108,6 +110,7 @@ class FakeMcpClient:
         self.connected = True
 
     async def list_tools(self, cancellation_token: Any = None) -> List[McpToolDefinition]:
+        self.list_tools_calls += 1
         return list(self._tools)
 
     async def invoke_tool(
@@ -649,6 +652,7 @@ class TestUnityMCPPluginInit:
         await plugin.initialize()
         assert fake.connected is True
         assert "unity_ping" in plugin.tools
+        assert [tool.name for tool in plugin.get_registered_tools()] == ["unity_ping"]
 
     @pytest.mark.asyncio
     async def test_initialize_idempotent(self):
@@ -1155,6 +1159,99 @@ class TestUnityMCPPluginExtended:
         funcs = kernel.get_full_list_of_function_metadata()
         names = [f.name for f in funcs]
         assert "invoke_unity_tool" in names
+
+    @pytest.mark.asyncio
+    async def test_create_kernel_with_unity_lists_tools_only_once(self):
+        td = McpToolDefinition(name="unity_ping", description="Ping the server")
+        fake_client = FakeMcpClient()
+        fake_client.set_tools([td])
+
+        MockClientClass = MagicMock(return_value=fake_client)
+        with patch("unity_mcp.plugin.StdioMcpClient", MockClientClass):
+            _ = await UnityMCPPlugin.create_kernel_with_unity(UnityMcpOptions())
+
+        assert fake_client.list_tools_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_create_kernel_with_unity_registers_one_namespace_many_functions(self):
+        td_one = McpToolDefinition(name="unity_a_tool", description="Tool A")
+        td_two = McpToolDefinition(name="unity_b_tool", description="Tool B")
+        fake_client = FakeMcpClient()
+        fake_client.set_tools([td_two, td_one])
+
+        MockClientClass = MagicMock(return_value=fake_client)
+        with patch("unity_mcp.plugin.StdioMcpClient", MockClientClass):
+            kernel = await UnityMCPPlugin.create_kernel_with_unity(UnityMcpOptions(), plugin_name="unity")
+
+        funcs = kernel.get_full_list_of_function_metadata()
+        unity_funcs = [f for f in funcs if f.plugin_name == "unity"]
+        unity_func_names = [f.name for f in unity_funcs]
+        assert "unity_a_tool" in unity_func_names
+        assert "unity_b_tool" in unity_func_names
+        assert unity_func_names.count("unity_a_tool") == 1
+        assert unity_func_names.count("unity_b_tool") == 1
+
+    @pytest.mark.asyncio
+    async def test_expanded_function_metadata_contains_schema_details(self):
+        td = McpToolDefinition(
+            name="unity_complex_tool",
+            description="Complex tool",
+            parameters={
+                "path": McpParameterDefinition(
+                    name="path",
+                    type="string",
+                    description="Asset path",
+                    required=True,
+                ),
+                "overwrite": McpParameterDefinition(
+                    name="overwrite",
+                    type="boolean",
+                    description="Overwrite existing",
+                    required=False,
+                    default_value=False,
+                ),
+            },
+        )
+
+        fake_client = FakeMcpClient()
+        fake_client.set_tools([td])
+
+        MockClientClass = MagicMock(return_value=fake_client)
+        with patch("unity_mcp.plugin.StdioMcpClient", MockClientClass):
+            kernel = await UnityMCPPlugin.create_kernel_with_unity(UnityMcpOptions(), plugin_name="unity")
+
+        funcs = kernel.get_full_list_of_function_metadata()
+        tool_meta = next(f for f in funcs if f.plugin_name == "unity" and f.name == "unity_complex_tool")
+        params = {p.name: p for p in tool_meta.parameters}
+        assert set(params.keys()) == {"path", "overwrite"}
+        assert params["path"].type_ == "string"
+        assert params["path"].is_required is True
+        assert params["path"].description == "Asset path"
+        assert params["overwrite"].type_ == "boolean"
+        assert params["overwrite"].is_required is False
+        assert params["overwrite"].default_value is False
+        assert params["overwrite"].description == "Overwrite existing"
+
+    @pytest.mark.asyncio
+    async def test_router_mode_still_works_with_kernel_plugin_registration(self):
+        td = McpToolDefinition(name="unity_ping", description="Ping")
+        plugin, _ = _make_plugin([td])
+        await plugin.initialize()
+        result = await plugin.invoke_unity_tool(tool_name="unity_ping", arguments_json="{}")
+        assert "unity_ping" in result
+
+
+class TestMcpToolMapper:
+    def test_get_registered_tools_returns_sorted_tools(self):
+        mapper = McpToolMapper()
+        mapper.initialize(
+            [
+                McpToolDefinition(name="unity_z_tool", description="Z"),
+                McpToolDefinition(name="unity_a_tool", description="A"),
+            ]
+        )
+        names = [tool.name for tool in mapper.get_registered_tools()]
+        assert names == ["unity_a_tool", "unity_z_tool"]
 
 
 # ====================================================================

@@ -35,6 +35,41 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
+### Install from packaged wheel (production-style)
+
+```bash
+# Build artifacts in dist/
+python -m pip install build
+python -m build
+
+# Install exact built wheel
+pip install dist/unity_mcp_plugin-<version>-py3-none-any.whl
+```
+
+### Localhost package + install automation (cross-platform)
+
+Use the helper script to automate local packaging + install:
+
+```bash
+# Full local flow: deps, tests, build, twine check, install wheel into .venv
+python scripts/package_install.py
+
+# Fast path (skip tests), recreate both build and target virtualenvs
+python scripts/package_install.py --skip-tests --recreate-venvs
+
+# Use a custom target venv
+python scripts/package_install.py --venv .venv-local
+```
+
+What the script does:
+
+- creates a build venv (`.venv-build` by default)
+- installs project/dev dependencies and release tooling (`build`, `twine`)
+- runs unit tests (`-m "not integration"`) unless `--skip-tests`
+- builds wheel + sdist into `dist/`
+- validates artifacts via `twine check`
+- installs the built wheel into your target venv (`.venv` by default)
+
 Prerequisites:
 
 - Python 3.10+
@@ -59,12 +94,75 @@ async def main():
 asyncio.run(main())
 ```
 
-### Full kernel — per-tool functions (best for planners)
+## Integration Example
+
+The plugin requires the `unity-mcp` executable available in your environment.
+Install once:
+
+```bash
+dotnet tool install -g unity-mcp
+```
+
+Then integrate from Python:
+
+```python
+import asyncio
+from unity_mcp import UnityMCPPlugin, UnityMcpOptions
+
+async def main():
+    options = UnityMcpOptions(
+        executable_path="unity-mcp",  # or absolute path to the executable
+        request_timeout_seconds=60,
+    )
+    plugin = UnityMCPPlugin.create(options)
+    await plugin.initialize()
+    try:
+        tools = await plugin.list_unity_tools()
+        print("Discovered tools:")
+        print(tools)
+
+        ping_result = await plugin.invoke_tool("ping", {})
+        print("Ping:", ping_result)
+    finally:
+        await plugin.cleanup()
+
+asyncio.run(main())
+```
+
+### Expanded mode (recommended) — per-tool functions
 
 ```python
 kernel = await UnityMCPPlugin.create_kernel_with_unity()
 result = await kernel.invoke("unity", "unity_create_scene", path="Assets/Scenes/Level1.unity")
 ```
+
+Expanded mode is best for autonomous agents/planners because each discovered MCP tool is exposed as a separate SK function with tool-level metadata.
+
+### Router mode (backward compatible) — single generic function
+
+```python
+plugin = UnityMCPPlugin.create()
+await plugin.initialize()
+
+# Add only the generic router/list functions
+kernel = Kernel()
+kernel.add_plugin(plugin, plugin_name="unity")
+
+result = await kernel.invoke(
+    "unity",
+    "invoke_unity_tool",
+    tool_name="unity_create_scene",
+    arguments_json='{"path":"Assets/Scenes/Level1.unity"}',
+)
+```
+
+Router mode keeps a smaller tool-definition footprint (single generic entry point), but discoverability and tool-calling reliability are lower than expanded mode.
+
+### Expanded vs Router tradeoffs
+
+- **Expanded mode**: registers one plugin namespace (`unity` by default) with one SK function per MCP tool; this improves discoverability and tool-calling reliability for planners/autonomous agents.
+- **Router mode**: keeps tool definitions compact in context (single generic function), but agents must infer tool names/arguments manually, which is less reliable.
+- **Recommendation**: use expanded mode for agentic workflows and router mode only when minimizing tool-definition footprint is the priority.
 
 ### Custom options
 
@@ -102,6 +200,7 @@ plugin = UnityMCPPlugin(client=FakeMcpClient())
 ## Key Features
 
 - **Dynamic tool discovery** — tools are discovered at runtime via `list_tools()`; no hardcoded wrappers
+- **Deterministic registration** — discovered tools are sorted by name before exposure to SK
 - **Retry with backoff** — configurable linear or exponential backoff on transient failures
 - **Health monitoring** — periodic ping loop; `is_healthy()` reflects connection state
 - **Security** — `LogSanitizer` redacts secrets from logs; `InputValidator` validates all tool calls
@@ -166,6 +265,18 @@ from unity_mcp import (
 
 `McpParameterDefinition.type` follows JSON Schema conventions:
 `"string"`, `"number"`, `"integer"`, `"boolean"`, `"object"`, `"array"`
+
+### Metadata fidelity notes
+
+Expanded mode propagates MCP parameter metadata into SK function metadata, including:
+
+- exact parameter names
+- descriptions
+- required vs optional
+- default values (when provided by MCP schema)
+- JSON-schema-like type mapping (`string`, `number`, `integer`, `boolean`, `array`, `object`)
+
+Current Python Semantic Kernel APIs do not fully preserve every JSON Schema construct (for example, `oneOf`, nested object schemas with full constraints, and all schema keywords) as first-class metadata fields. This plugin forwards the richest metadata currently supported via `KernelParameterMetadata` (`type`, `description`, `default_value`, `is_required`, and `schema_data`).
 
 ### Exception hierarchy
 

@@ -197,6 +197,36 @@ class IMcpClient(Protocol):
 
 
 @runtime_checkable
+class IMcpToolMapper(Protocol):
+    """
+    Contract for mapping discovered MCP tools into SK-friendly metadata.
+
+    Implementations are the source of truth for discovered tools after
+    initialization, so registration code does not need to re-query the client.
+    """
+
+    def initialize(self, tools: List[McpToolDefinition]) -> None:
+        """Cache discovered tools, replacing any previously mapped set."""
+        ...
+
+    def map_tool_definition(self, tool: McpToolDefinition) -> Dict[str, Any]:
+        """Map a tool definition into metadata suitable for SK registration."""
+        ...
+
+    def get_tool_by_name(self, tool_name: str) -> Optional[McpToolDefinition]:
+        """Return a tool by name, or None when not registered."""
+        ...
+
+    def get_tool_names(self) -> List[str]:
+        """Return deterministic, sorted tool names."""
+        ...
+
+    def get_registered_tools(self) -> List[McpToolDefinition]:
+        """Return deterministic, sorted registered tools."""
+        ...
+
+
+@runtime_checkable
 class IProcessManager(Protocol):
     """Protocol for subprocess lifecycle management."""
 
