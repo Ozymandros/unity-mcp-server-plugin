@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/ozymandros-unity-mcp-server-plugin-badge.png)](https://mseep.ai/app/ozymandros-unity-mcp-server-plugin)
+
 # Unity MCP Plugin for Semantic Kernel
 
 Python plugin that bridges Semantic Kernel agents with the [Unity MCP Server](https://github.com/Ozymandros/Unity-MCP-SK-Plugin) via **stdio transport** (subprocess).
